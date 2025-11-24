@@ -18,7 +18,7 @@ REGION = "us-central1"             # Gemini global region (safe & correct)
 vertexai.init(project=PROJECT_ID, location=REGION)
 
 # Gemini Flash 2.5 — Global Model (NO REGION ERRORS)
-model = GenerativeModel("publishers/google/models/gemini-2.5-flash-001")
+model = GenerativeModel("gemini-2.5-flash")
 
 # Firestore DB
 db = firestore.Client(project=PROJECT_ID)
