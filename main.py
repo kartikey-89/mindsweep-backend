@@ -11,7 +11,7 @@ PROJECT_ID = "mindsweep-ai"
 REGION = "asia-south1"
 
 vertexai.init(project=PROJECT_ID, location=REGION)
-model = GenerativeModel("gemini-1.5-flash")
+model = GenerativeModel("gemini-1.0-pro")
 
 db = firestore.Client(project=PROJECT_ID)
 
