@@ -7,11 +7,17 @@ import datetime
 
 app = FastAPI()
 
+# ✅ Correct project + region
 PROJECT_ID = "mindsweep-ai"
-REGION = "asia-south1"
- 
+REGION = "asia-south1"   # Mumbai region (same as Firestore)
+
+# ✅ Init Vertex AI in Mumbai region
 vertexai.init(project=PROJECT_ID, location=REGION)
+
+# ✅ Use latest active Gemini model
 model = GenerativeModel("gemini-2.5-flash")
+# Agar kabhi issue aaye to ye bhi try kar sakte ho:
+# model = GenerativeModel("gemini-2.5-flash-lite")
 
 db = firestore.Client(project=PROJECT_ID)
 
@@ -23,7 +29,7 @@ def mindsweep(data: Input):
     try:
         prompt = f"""
         You are MindSweep AI, an emotional clarity assistant.
-        Provide structured clarity.
+        Provide structured clarity in 9 clear sections.
 
         1) EMOTIONS YOU MAY BE FEELING:
         2) SUMMARY:
@@ -33,7 +39,7 @@ def mindsweep(data: Input):
         6) TODAY ACTION PLAN:
         7) NEXT FEW DAYS:
         8) HEALTHY SELF TALK:
-        9) IF FEELS HEAVY:
+        9) IF IT STILL FEELS HEAVY:
 
         User: {data.message}
         """
