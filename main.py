@@ -8,7 +8,7 @@ import datetime
 app = FastAPI()
 
 PROJECT_ID = "mindsweep-ai"
-REGION = "asia-south1"
+REGION = "us-central1"
 
 vertexai.init(project=PROJECT_ID, location=REGION)
 model = GenerativeModel("gemini-1.0-pro")
