@@ -1,17 +1,19 @@
-# Use Python
 FROM python:3.11-slim
 
-# Set working directory
+# Install system deps
+RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy all files
-COPY . .
-
-# Install dependencies
+# Install Python deps
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port
-EXPOSE 8080
+# Copy code
+COPY . .
 
-# Run the app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Cloud Run gives PORT env var
+ENV PORT=8080
+
+# Start FastAPI with uvicorn using $PORT
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
