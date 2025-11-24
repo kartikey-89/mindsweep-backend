@@ -1,6 +1,5 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import vertexai
 from vertexai.generative_models import GenerativeModel
@@ -8,187 +7,239 @@ from google.cloud import firestore
 import datetime
 import os
 import logging
-import time
+import random
 
-# --------------------------------------------------------
-# 🔥 LOGGER SETUP (production-grade)
-# --------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-logger = logging.getLogger("mindsweep")
-
-
-# --------------------------------------------------------
-# 🔥 FASTAPI APP
-# --------------------------------------------------------
+# ============================================================
+# 🔥 FASTAPI APP + CORS
+# ============================================================
 app = FastAPI()
 
-# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Open for demo & Cloud Run frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-# --------------------------------------------------------
-# 🔥 GLOBAL ERROR HANDLER (so API never crashes)
-# --------------------------------------------------------
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled error: {str(exc)}")
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Internal server error. Please try again."},
-    )
+# ============================================================
+# 🔥 LOGGING SETUP
+# ============================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s — %(levelname)s — %(message)s"
+)
+logger = logging.getLogger("mindsweep")
 
 
-# --------------------------------------------------------
-# 🔥 REQUEST LOGGING MIDDLEWARE
-# --------------------------------------------------------
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start = time.time()
-
-    logger.info(f"➡️ Request: {request.method} {request.url}")
-
-    response = await call_next(request)
-
-    duration = round((time.time() - start) * 1000, 2)
-    logger.info(f"⬅️ Response: {response.status_code} ({duration} ms)")
-
-    return response
-
-
-# --------------------------------------------------------
-# 🔥 SETTINGS
-# --------------------------------------------------------
+# ============================================================
+# 🔥 PROJECT + MODEL SETUP
+# ============================================================
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "mindsweep-ai")
 REGION = os.environ.get("VERTEX_REGION", "us-central1")
 
 vertexai.init(project=PROJECT_ID, location=REGION)
 
-# PRIMARY MODEL
-primary_model = GenerativeModel("gemini-2.5-pro")
+# Primary model
+MAIN_MODEL = "gemini-2.5-pro"
+FALLBACK_MODEL = "gemini-1.5-flash"
 
-# FALLBACK MODEL (if above fails)
-fallback_model = GenerativeModel("gemini-1.5-flash")
+model = GenerativeModel(MAIN_MODEL)
 
-
-# Firestore connection
+# Firestore
 db = firestore.Client(project=PROJECT_ID)
 
 
+# ============================================================
+# 🔥 INPUT MODEL
+# ============================================================
 class Input(BaseModel):
     message: str
 
 
-# --------------------------------------------------------
-# 🔥 SIMPLE HEALTH CHECK (Backend Only)
-# --------------------------------------------------------
-@app.get("/health")
-def health():
-    return {"status": "healthy"}
-
-
-# --------------------------------------------------------
-# 🔥 ADVANCED AI HEALTH CHECK
-# --------------------------------------------------------
-@app.get("/health/ai")
-def ai_health():
-    try:
-        test = primary_model.generate_content("ping")
-        return {"ai_status": "working", "model": "gemini-2.5-pro"}
-    except:
-        try:
-            fallback_model.generate_content("ping")
-            return {"ai_status": "fallback-active", "model": "gemini-1.5-flash"}
-        except Exception as e:
-            return {"ai_status": "down", "error": str(e)}
-
-
-# --------------------------------------------------------
+# ============================================================
 # 🔥 LANGUAGE DETECTION
-# --------------------------------------------------------
+# ============================================================
 def detect_language(text: str):
-    hindi_chars = sum(1 for c in text if '\u0900' <= c <= '\u097F')
+    # Detect Hindi characters
+    hindi_chars = sum(1 for c in text if "\u0900" <= c <= "\u097F")
     if hindi_chars > 3:
         return "hindi"
 
+    # Hinglish keyword patterns
     hinglish_words = [
         "kyu", "kaise", "aisa", "waise", "mujhe", "mera", "tera",
         "kya", "hota", "hogaya", "acha", "accha", "nahi", "nhi",
         "yrr", "bhai", "samjha", "samjh", "matlab", "bol", "kr",
-        "dil", "yaar", "scene"
+        "dil", "yaar", "mann", "lag", "feel"
     ]
+
     if any(w in text.lower() for w in hinglish_words):
         return "hinglish"
 
     return "english"
 
 
-# --------------------------------------------------------
-# 🔥 MAIN MINDSWEEP ENDPOINT
-# --------------------------------------------------------
+# ============================================================
+# 🔥 VARIATION ENGINE
+# ============================================================
+def pick(arr): return random.choice(arr)
+
+EMOTION_VARIATIONS = [
+    "lag raha hoga", "feel ho raha hoga",
+    "andar se ek ajeeb sa pressure ho raha hoga",
+    "dil aur dimag dono thak gaye honge",
+    "sab kuch ruk sa gaya hoga"
+]
+
+SUMMARY_VARIATIONS = [
+    "tum jis phase se guzar rahe ho, woh sach me heavy hai",
+    "yeh situation natural hai par mentally bohot drain karti hai",
+    "mind shock state me ch चला जाता है",
+    "emotionally system overload ho jata hai",
+    "brain temporary freeze me ch चला जाता hai"
+]
+
+CONTROL_VARIATIONS = [
+    "bas choti controllable cheezein pakdo",
+    "sirf agle 10 minute sambhalo",
+    "body ko calm karna is the first step",
+    "apne pace pe move karo",
+    "apne aap ko permission do slow hone ki"
+]
+
+LETGO_VARIATIONS = [
+    "har 'kyun' ka jawab abhi mat dhoondo",
+    "apne aap ko blame mat karo",
+    "purani memories ko baar baar mat kholo",
+    "unke text ka wait temporarily pause kar do",
+    "overthinking ko dheere-dheere chhodo"
+]
+
+ROOT_VARIATIONS = [
+    "yeh sirf breakup nahi, identity shift bhi hai",
+    "heartbreak mind ko shock mode me daal deta hai",
+    "jab routine break hota hai to emotional collapse hota hai",
+    "mind safety search karta hai, isliye confusion aata hai",
+    "body emotional withdrawal phase me hoti hai"
+]
+
+ACTION_TODAY_VARIATIONS = [
+    "aaj sirf grounding activities karo",
+    "zyaada mat socho, bas small actions",
+    "body ko thoda warmth do",
+    "mind ko thoda stability do",
+    "aaj ke din ko simple rakho"
+]
+
+NEXT_DAYS_VARIATIONS = [
+    "aane wale dino me bas consistency rakho",
+    "3–5 din me clarity start hoti hai",
+    "mind dheere-dheere settle hota hai",
+    "emotions waves me aate hain, normal hai",
+    "thoda movement + thoda silence important hai"
+]
+
+AFFIRM_VARIATIONS = [
+    "main kaafi hoon, chahe aaj tough lag raha ho",
+    "mere emotions valid hain",
+    "main break nahi ho raha, bas healing mode me hoon",
+    "yeh phase temporary hai",
+    "mera self-worth kisi rishte se fix nahi hota"
+]
+
+# ============================================================
+# 🔥 ROUTES
+# ============================================================
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "MindSweep AI"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+
+# ============================================================
+# 🔥 MINDSWEEP ENDPOINT
+# ============================================================
 @app.post("/mindsweep")
 def mindsweep(data: Input):
 
+    logger.info(f"Incoming request: {data.message}")
+
+    # Language detection
     lang = detect_language(data.message)
 
     if lang == "hindi":
-        language_instruction = "IMPORTANT: User wrote in Hindi. Reply fully in **simple Hindi**."
+        language_instruction = "Respond completely in **simple Hindi**."
     elif lang == "hinglish":
-        language_instruction = "IMPORTANT: User wrote in Hinglish. Reply fully in **Hinglish (Hindi-English mix)**."
+        language_instruction = "Respond completely in **Hinglish** (Hindi in Roman English)."
     else:
-        language_instruction = "IMPORTANT: User wrote in English. Reply in **simple English**."
+        language_instruction = "Respond in **simple warm English**."
 
+    # Final dynamic prompt
     prompt = f"""
 {language_instruction}
 
-You are MindSweep AI — an emotional clarity companion...
-(KEEP YOUR EXISTING FULL PROMPT HERE EXACTLY AS IT IS)
-User Input:
+You are MindSweep AI — an emotional clarity companion.
+
+Use emotional depth + variation:
+- Emotion section: "{pick(EMOTION_VARIATIONS)}"
+- Summary: "{pick(SUMMARY_VARIATIONS)}"
+- Control: "{pick(CONTROL_VARIATIONS)}"
+- Let go: "{pick(LETGO_VARIATIONS)}"
+- Root: "{pick(ROOT_VARIATIONS)}"
+- Today: "{pick(ACTION_TODAY_VARIATIONS)}"
+- Next days: "{pick(NEXT_DAYS_VARIATIONS)}"
+- Affirm: "{pick(AFFIRM_VARIATIONS)}"
+
+STRICT FORMAT (always use EXACT headings):
+
+1) EMOTIONS YOU MAY BE FEELING
+2) SUMMARY
+3) WHAT IS IN YOUR CONTROL
+4) WHAT YOU CAN LET GO
+5) ROOT ISSUES
+6) TODAY ACTION PLAN
+7) NEXT FEW DAYS
+8) HEALTHY SELF TALK
+9) IF IT STILL FEELS HEAVY
+
+User Message:
 \"\"\"{data.message}\"\"\"
 """
 
-    # ------------ AI CALL WITH FALLBACK ------------
+    # Gemini call + fallback
     try:
-        result = primary_model.generate_content(prompt)
+        result = model.generate_content(prompt)
         clarity = result.text
-        model_used = "gemini-2.5-pro"
+        logger.info("Gemini response generated.")
     except Exception as e:
-        logger.error(f"Primary model failed: {str(e)}")
-        try:
-            result = fallback_model.generate_content(prompt)
-            clarity = result.text
-            model_used = "gemini-1.5-flash (fallback)"
-        except Exception as e2:
-            return {"error": f"AI error: {str(e2)}"}
+        logger.error(f"Main model failed: {e}. Trying fallback...")
+        fallback = GenerativeModel(FALLBACK_MODEL)
+        clarity = fallback.generate_content(prompt).text
 
-    # ------------ SAVE SAFELY TO FIRESTORE ------------
+    # Save to Firestore
     try:
         db.collection("mindsweeps").add({
             "message": data.message,
             "clarity": clarity,
-            "model_used": model_used,
             "timestamp": datetime.datetime.utcnow()
         })
     except Exception as e:
-        logger.error(f"Firestore write error: {str(e)}")
-        return {"error": "Firestore error. Try again later."}
+        logger.error(f"Firestore error: {e}")
+        return {"clarity": clarity, "warning": "Saved locally, not in DB"}
 
-    return {"clarity": clarity, "model_used": model_used}
+    return {"clarity": clarity}
 
 
-# --------------------------------------------------------
+# ============================================================
 # 🔥 HISTORY ENDPOINT
-# --------------------------------------------------------
+# ============================================================
 @app.get("/history")
-def history():
+def get_history():
     try:
         docs = (
             db.collection("mindsweeps")
@@ -197,18 +248,17 @@ def history():
             .stream()
         )
 
-        out = []
-        for doc in docs:
-            d = doc.to_dict()
-            out.append({
-                "message": d.get("message", ""),
-                "clarity": d.get("clarity", ""),
-                "model_used": d.get("model_used", ""),
-                "timestamp": d.get("timestamp").isoformat()
+        history = []
+        for d in docs:
+            obj = d.to_dict()
+            history.append({
+                "message": obj.get("message"),
+                "clarity": obj.get("clarity"),
+                "timestamp": obj.get("timestamp").isoformat() if obj.get("timestamp") else ""
             })
 
-        return {"history": out}
+        return {"history": history}
 
     except Exception as e:
-        return {"error": f"Firestore read error: {str(e)}"}
-
+        logger.error(f"History error: {e}")
+        return {"history": []}
