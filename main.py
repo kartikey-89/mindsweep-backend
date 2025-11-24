@@ -8,10 +8,10 @@ import datetime
 app = FastAPI()
 
 PROJECT_ID = "mindsweep-ai"
-REGION = "us-central1"
-
+REGION = "asia-south1"
+ 
 vertexai.init(project=PROJECT_ID, location=REGION)
-model = GenerativeModel("models/gemini-1.5-flash")
+model = GenerativeModel("gemini-2.5-flash")
 
 db = firestore.Client(project=PROJECT_ID)
 
