@@ -9,30 +9,23 @@ import os
 
 app = FastAPI()
 
-# ---------------- CORS (very important for frontend in browser) ---------------
+# ---------------- CORS ----------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # for demo, open to all
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ------------------------------------------------------------------
-# 🔹 SETTINGS
-# ------------------------------------------------------------------
-# Use the project where Cloud Run is running
+# ---------------- SETTINGS ----------------
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "mindsweep-ai")
-
-# Region for Gemini – us-central1 is safe for Gemini models
 REGION = os.environ.get("VERTEX_REGION", "us-central1")
 
 vertexai.init(project=PROJECT_ID, location=REGION)
 
-# Gemini Flash model
 model = GenerativeModel("gemini-2.5-pro")
 
-# Firestore connection (uses default project from env)
 db = firestore.Client(project=PROJECT_ID)
 
 
@@ -54,13 +47,58 @@ def health():
     return {"status": "healthy"}
 
 
-# ------------------------------------------------------------------
-# 🔹 MINDSWEEP ENDPOINT
-# ------------------------------------------------------------------
+# ============================================================
+# 🔥 LANGUAGE DETECTION (English / Hindi / Hinglish)
+# ============================================================
+def detect_language(text: str):
+
+    # detect Hindi script
+    hindi_chars = sum(1 for c in text if '\u0900' <= c <= '\u097F')
+    if hindi_chars > 3:
+        return "hindi"
+
+    # detect hinglish patterns
+    hinglish_words = [
+        "kyu", "kaise", "aisa", "waise", "mujhe", "mera", "tera",
+        "kya", "hota", "hogaya", "acha", "accha", "nahi", "nhi",
+        "yrr", "bhai", "samjha", "samjh", "matlab", "bol", "kr",
+        "mera", "tere", "dil", "yaar"
+    ]
+
+    if any(w in text.lower() for w in hinglish_words):
+        return "hinglish"
+
+    return "english"
+
+
+# ============================================================
+# 🔥 MINDSWEEP ENDPOINT
+# ============================================================
 @app.post("/mindsweep")
 def mindsweep(data: Input):
-    try:
-        prompt = f"""
+
+    # Detect language first
+    lang = detect_language(data.message)
+
+    if lang == "hindi":
+        language_instruction = (
+            "IMPORTANT: User wrote in Hindi. Respond fully in **simple Hindi**, "
+            "warm tone, natural emotional language."
+        )
+    elif lang == "hinglish":
+        language_instruction = (
+            "IMPORTANT: User wrote in Hinglish. Respond fully in **Hinglish** "
+            "(Hindi + English mix) with natural desi conversational tone."
+        )
+    else:
+        language_instruction = (
+            "IMPORTANT: User wrote in English. Respond in **simple, warm English**."
+        )
+
+    # ---------------- PROMPT WITH LANGUAGE INSTRUCTION ----------------
+    prompt = f"""
+{language_instruction}
+
 You are MindSweep AI — an emotional clarity companion designed to help young Indians process stress, heartbreak, pressure and overthinking. 
 
 Your tone MUST ALWAYS be:
@@ -81,60 +119,38 @@ Your goal is to help the user feel:
 - Clear about their situation
 - Guided with actionable steps
 
-You MUST ALWAYS reply in this **exact structure** with headings:
+You MUST ALWAYS reply in this **exact 9-section structure**:
 
-1) EMOTIONS YOU MAY BE FEELING
-→ Identify what the user might be feeling.  
-→ Explain emotions in a very natural, relatable way.
+1) EMOTIONS YOU MAY BE FEELING  
+2) SUMMARY  
+3) WHAT IS IN YOUR CONTROL  
+4) WHAT YOU CAN LET GO  
+5) ROOT ISSUES  
+6) TODAY ACTION PLAN  
+7) NEXT FEW DAYS  
+8) HEALTHY SELF TALK  
+9) IF IT STILL FEELS HEAVY  
 
-2) SUMMARY
-→ Explain clearly what the user is actually going through beneath the surface.
-
-3) WHAT IS IN YOUR CONTROL
-→ Give empowering, practical things they CAN do.
-
-4) WHAT YOU CAN LET GO
-→ Help release guilt, overthinking, self-blame, fear.
-
-5) ROOT ISSUES
-→ Explain the deeper emotional patterns contributing to their pain.
-
-6) TODAY ACTION PLAN
-→ 2–4 small, simple, doable steps for TODAY ONLY.
-
-7) NEXT FEW DAYS
-→ How they should move emotionally for the next 3–5 days.
-
-8) HEALTHY SELF TALK
-→ Replace their negative self-talk with warm, human affirmations.
-
-9) IF IT STILL FEELS HEAVY
-→ Gentle suggestions like: talk to a friend, elder or supportive professional.
-→ NEVER make clinical statements.
-
-STYLE RULES (IMPORTANT):
-- ALWAYS write like a real human being.
-- NEVER mention that you are an AI.
-- NEVER give generic textbook advice.
-- ALWAYS create depth, emotional insight, and soothing tone.
-- Keep paragraphs short and comforting.
-- Add very small emotional nuances.
-- No emojis unless natural – max 1–2 per response, optional.
-- Never exaggerate.
-- Never be dramatic.
-- Never sound scripted.
+STYLE RULES:  
+- Always sound human.  
+- Never sound like an AI.  
+- No generic advice.  
+- No long paragraphs.  
+- No dramatic tone.  
+- 1–2 natural emojis max (optional).  
+- Emotionally insightful and calming.  
 
 User Input: {data.message}
-
 """
 
+    # ------------------- AI CALL --------------------
+    try:
         result = model.generate_content(prompt)
         clarity = result.text
-
     except Exception as e:
         return {"error": f"Gemini error: {str(e)}"}
 
-    # Save to Firestore
+    # ------------------- FIRESTORE SAVE --------------------
     try:
         db.collection("mindsweeps").add({
             "message": data.message,
@@ -147,9 +163,9 @@ User Input: {data.message}
     return {"clarity": clarity}
 
 
-# ------------------------------------------------------------------
-# 🔹 HISTORY ENDPOINT
-# ------------------------------------------------------------------
+# ============================================================
+# 🔥 HISTORY ENDPOINT
+# ============================================================
 @app.get("/history")
 def get_history():
     try:
