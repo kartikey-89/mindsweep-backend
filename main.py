@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import vertexai
 from vertexai.generative_models import GenerativeModel
@@ -8,23 +9,49 @@ import os
 
 app = FastAPI()
 
+# ---------------- CORS (very important for frontend in browser) ---------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],          # for demo, open to all
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ------------------------------------------------------------------
 # 🔹 SETTINGS
 # ------------------------------------------------------------------
-PROJECT_ID = "mindsweep-ai"
-REGION = "us-central1"   # safest global region for Gemini models
+# Use the project where Cloud Run is running
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "mindsweep-ai")
+
+# Region for Gemini – us-central1 is safe for Gemini models
+REGION = os.environ.get("VERTEX_REGION", "us-central1")
 
 vertexai.init(project=PROJECT_ID, location=REGION)
 
-# Gemini Flash 2.5 (global) — always works, no region restrictions
+# Gemini Flash model
 model = GenerativeModel("gemini-2.5-flash")
 
-# Firestore connection
+# Firestore connection (uses default project from env)
 db = firestore.Client(project=PROJECT_ID)
 
-# Body model
+
 class Input(BaseModel):
     message: str
+
+
+@app.get("/")
+def root():
+    return {
+        "service": "MindSweep AI backend",
+        "status": "ok",
+        "endpoints": ["/mindsweep (POST)", "/history (GET)", "/health"],
+    }
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
 
 
 # ------------------------------------------------------------------
@@ -107,7 +134,6 @@ User Input: {data.message}
         return {"error": f"Firestore error: {str(e)}"}
 
     return {"clarity": clarity}
-
 
 
 # ------------------------------------------------------------------
