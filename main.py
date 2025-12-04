@@ -41,8 +41,8 @@ REGION = os.environ.get("VERTEX_REGION", "us-central1")
 vertexai.init(project=PROJECT_ID, location=REGION)
 
 # Primary model
-MAIN_MODEL = "gemini-2.5-pro"
-FALLBACK_MODEL = "gemini-1.5-flash"
+MAIN_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-2.5-flash"
 
 model = GenerativeModel(MAIN_MODEL)
 
